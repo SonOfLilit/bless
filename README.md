@@ -39,6 +39,7 @@ mod tests {
 
 ## `src/tests/tests.blessed.json`
 
+```json
 {
     "happy": {
         "harness": "my_harness",
@@ -55,6 +56,7 @@ mod tests {
         }
     },
 }
+```
 
 Blessed will generate a regular rust unit test for every case in the `tests.blessed.json` file. The test runs the case using the harness, writes the results to `tests/blessed/{test_name}.json`, and then fails if this json file doesn't match its git staged version.
 
