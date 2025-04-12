@@ -1,30 +1,34 @@
-enum Regex {
+#[cfg_attr(test, derive(serde::Serialize, Debug))]
+pub enum Regex {
     Literal(String),
 }
 
-enum ParseError {
+#[cfg_attr(test, derive(serde::Serialize))]
+pub enum ParseError {
     InvalidRegex(String),
 }
 
 fn parse_regex(regex: &str) -> Result<Regex, ParseError> {
-    Ok(Regex::Literal(regex.to_string()))
+    if regex == "[" {
+        Err(ParseError::InvalidRegex("Unmatched bracket".to_string()))
+    } else {
+        Ok(Regex::Literal(regex.to_string()))
+    }
 }
 
-fn match_regex(regex: Regex, input: &str) -> Result<bool, ParseError> {
+fn match_regex(regex: &Regex, input: &str) -> bool {
     match regex {
-        Regex::Literal(literal) => Ok(input.contains(&literal)),
+        Regex::Literal(literal) => input.contains(literal),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blessed::JsonSchema;
+    use blessed::{Serialize, Deserialize};
+    use std::collections::HashMap;
 
-    #[derive(Serialize)]
-    struct SerializableAST(Regex);
-
-    #[derive(JsonSchema)]
+    #[derive(Deserialize)]
     struct Case {
         regex: String,
         inputs: Vec<String>,
@@ -32,31 +36,34 @@ mod tests {
 
     #[derive(Serialize)]
     struct Output {
-        parse_error: Option<String>,
-        ast: SerializableAST,
-        matches: Map<String, bool>,
+        parse_error: Option<ParseError>,
+        ast: Option<Regex>,
+        matches: HashMap<String, bool>,
     }
 
     #[blessed::harness]
     fn parse_compile_match(case: Case) -> Output {
         let parsed = parse_regex(&case.regex);
         match parsed {
-            Ok(ast) => Output {
-                ast: SerializableAST(ast),
-                parse_error: None,
-                matches: case
+            Ok(ast) => {
+                let matches = case
                     .inputs
                     .iter()
-                    .map(|input| (input.clone(), match_regex(ast, input)))
-                    .collect(),
+                    .map(|input| (input.clone(), match_regex(&ast, input)))
+                    .collect();
+                Output {
+                    ast: Some(ast),
+                    parse_error: None,
+                    matches,
+                }
             },
             Err(e) => Output {
-                ast: SerializableAST(Literal("".to_string())),
-                parse_error: Some(e.to_string()),
-                matches: vec![],
+                ast: None,
+                parse_error: Some(e),
+                matches: HashMap::new(),
             },
         }
     }
 
-    blessed::tests!("tests/", "tests/blessed/");
+    blessed::tests!("tests/*.blessed.json", "tests/blessed/");
 }

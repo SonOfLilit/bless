@@ -24,7 +24,8 @@
     "ill_formed": {
         "harness": "parse_compile_match",
         "params": {
-            "regex": "["
+            "regex": "[",
+            "inputs": []
         }
     }
 }

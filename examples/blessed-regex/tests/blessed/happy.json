@@ -1,0 +1,12 @@
+{
+  "ast": {
+    "Literal": "hello"
+  },
+  "matches": {
+    "hello": true,
+    "hello world": true,
+    "why hello there": true,
+    "world": false
+  },
+  "parse_error": null
+}

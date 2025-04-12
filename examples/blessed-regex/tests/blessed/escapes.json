@@ -1,0 +1,10 @@
+{
+  "ast": {
+    "Literal": "\\d"
+  },
+  "matches": {
+    "1": true,
+    "a": false
+  },
+  "parse_error": null
+}

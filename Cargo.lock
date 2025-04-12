@@ -29,6 +29,7 @@ name = "blessed-regex"
 version = "0.1.0"
 dependencies = [
  "blessed",
+ "inventory",
  "serde",
  "serde_json",
 ]

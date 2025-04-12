@@ -10,3 +10,4 @@ serde_json = "1.0"
 
 [dev-dependencies]
 blessed = { path = "../../blessed/blessed" }
+inventory = "0.3"
