@@ -1,0 +1,30 @@
+{
+    "happy": {
+        "harness": "parse_compile_match",
+        "params": {
+            "regex": "hello",
+            "inputs": [
+                "hello",
+                "world",
+                "hello world",
+                "why hello there"
+            ]
+        }
+    },
+    "escapes": {
+        "harness": "parse_compile_match",
+        "params": {
+            "regex": "\\d",
+            "inputs": [
+                "1",
+                "a"
+            ]
+        }
+    },
+    "ill_formed": {
+        "harness": "parse_compile_match",
+        "params": {
+            "regex": "["
+        }
+    }
+}
