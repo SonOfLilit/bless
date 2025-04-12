@@ -1,12 +1,13 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn, Ident, Type, PatType, LitStr, Token, punctuated::Punctuated};
+use syn::{ItemFn, Ident, PatType, LitStr, Token, punctuated::Punctuated};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json;
 use std::collections::HashMap;
 use glob;
+use std::process::{Command, Output as ProcessOutput};
 
 #[derive(Deserialize, Debug)]
 struct BlessedDefinition {
@@ -77,13 +78,42 @@ pub fn tests(input: TokenStream) -> TokenStream {
     let mut generated_tests = Vec::new();
 
     let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
-        Ok(dir) => dir,
+        Ok(dir) => PathBuf::from(dir),
         Err(_) => return syn::Error::new(proc_macro2::Span::call_site(), "CARGO_MANIFEST_DIR not set").to_compile_error().into(),
     };
-    let absolute_glob_pattern = Path::new(&manifest_dir).join(&input_glob_pattern_rel);
-    let output_dir_abs = Path::new(&manifest_dir).join(&output_dir_rel);
+    let absolute_glob_pattern = manifest_dir.join(&input_glob_pattern_rel);
+    let output_dir_abs = manifest_dir.join(&output_dir_rel);
 
-    eprintln!("Searching for blessed files with pattern: {:?}", absolute_glob_pattern);
+    // --- Find Git Root --- 
+    let git_root = match Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(&manifest_dir)
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            PathBuf::from(stdout)
+        },
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = format!("`git rev-parse --show-toplevel` failed (exit code: {}): {}", output.status, stderr);
+            return syn::Error::new(proc_macro2::Span::call_site(), msg).to_compile_error().into();
+        }
+        Err(e) => {
+            let msg = format!("Failed to execute git command: {}. Is git installed and in PATH?", e);
+            return syn::Error::new(proc_macro2::Span::call_site(), msg).to_compile_error().into();
+        }
+    };
+    let git_root_str = match git_root.to_str() {
+         Some(s) => s.to_string(),
+         None => {
+             let msg = format!("Git root path is not valid UTF-8: {:?}", git_root);
+             return syn::Error::new(proc_macro2::Span::call_site(), msg).to_compile_error().into();
+         }
+    };
+    // --- End Find Git Root ---
+
+    eprintln!("Searching for blessed files with pattern: {:?}\nGit root: {:?}", absolute_glob_pattern, git_root);
 
     let glob_pattern_str = match absolute_glob_pattern.to_str() {
         Some(s) => s,
@@ -129,24 +159,60 @@ pub fn tests(input: TokenStream) -> TokenStream {
                                         let harness_name = definition.harness;
                                         let params_json_str = definition.params.to_string();
                                         // Use absolute output dir path
-                                        let output_file_path = output_dir_abs.join(format!("{}.json", test_name));
-                                        let output_file_path_str = match output_file_path.to_str() {
+                                        let output_file_path_abs = output_dir_abs.join(format!("{}.json", test_name));
+
+                                        // --- Calculate Relative Path ---
+                                        let output_file_path_rel = match output_file_path_abs.strip_prefix(&git_root) {
+                                            Ok(p) => p.to_path_buf(),
+                                            Err(_) => {
+                                                let msg = format!("Output file path {:?} is not inside git root {:?}", output_file_path_abs, git_root);
+                                                return syn::Error::new(proc_macro2::Span::call_site(), msg).to_compile_error().into();
+                                            }
+                                        };
+                                        let output_file_path_rel_str = match output_file_path_rel.to_str() {
                                             Some(s) => s.to_string(),
                                             None => {
-                                               let msg = format!("Invalid output path generated: {:?}", output_file_path);
+                                                let msg = format!("Relative output path is not valid UTF-8: {:?}", output_file_path_rel);
+                                                return syn::Error::new(proc_macro2::Span::call_site(), msg).to_compile_error().into();
+                                            }
+                                        };
+                                        // --- End Calculate Relative Path ---
+
+                                        let output_file_path_abs_str = match output_file_path_abs.to_str() {
+                                            Some(s) => s.to_string(),
+                                            None => {
+                                               let msg = format!("Absolute output path is not valid UTF-8: {:?}", output_file_path_abs);
                                                return syn::Error::new(proc_macro2::Span::call_site(), msg).to_compile_error().into();
                                             }
                                         };
+
+                                        // Clone git_root_str for use inside quote!
+                                        let git_root_str_clone = git_root_str.clone();
 
                                         generated_tests.push(quote! {
                                             #[test]
                                             fn #test_fn_name() {
                                                 let harness_name = #harness_name;
                                                 let params_json_str = #params_json_str;
-                                                let output_file_path = #output_file_path_str;
+                                                let output_file_path_abs_str = #output_file_path_abs_str;
+                                                let output_file_path_rel_str = #output_file_path_rel_str;
+                                                let git_root_path_str = #git_root_str_clone; // Use cloned git root
 
-                                                let output_path = ::std::path::Path::new(output_file_path);
-                                                let existing_golden = ::std::fs::read_to_string(output_path).ok();
+                                                // --- Helper Fn: Run Git Status ---
+                                                fn run_git_status(git_root: &str, relative_path: &str) -> Result<String, String> {
+                                                    let output = ::std::process::Command::new("git")
+                                                        .args(["status", "--porcelain", "--", relative_path])
+                                                        .current_dir(git_root)
+                                                        .output()
+                                                        .map_err(|e| format!("Failed to execute git status: {}", e))?;
+
+                                                    if !output.status.success() {
+                                                        let stderr = String::from_utf8_lossy(&output.stderr);
+                                                        return Err(format!("`git status` failed (exit code: {}): {}", output.status, stderr));
+                                                    }
+                                                    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                                                }
+                                                // --- End Helper Fn ---
 
                                                 let harness = match ::inventory::iter::<::blessed::HarnessFn>
                                                     .into_iter()
@@ -161,8 +227,8 @@ pub fn tests(input: TokenStream) -> TokenStream {
                                                 let params: ::serde_json::Value = ::serde_json::from_str(params_json_str)
                                                     .expect("Failed to parse params JSON string (should not happen)");
 
+                                                // Run Harness
                                                 let result = (harness.func)(params);
-
                                                 let output_json = match result {
                                                     Ok(value) => ::serde_json::to_string_pretty(&value).expect("Failed to serialize result to JSON"),
                                                     Err(e) => {
@@ -171,25 +237,40 @@ pub fn tests(input: TokenStream) -> TokenStream {
                                                     }
                                                 };
 
-                                                if let Some(parent) = output_path.parent() {
+                                                // Write Output File
+                                                let output_path_abs = ::std::path::Path::new(output_file_path_abs_str);
+                                                if let Some(parent) = output_path_abs.parent() {
                                                     if let Err(e) = ::std::fs::create_dir_all(parent) {
                                                         panic!("Failed to create output directory '{:?}': {}", parent, e);
                                                     }
                                                 }
-
-                                                if let Err(e) = ::std::fs::write(output_path, &output_json) {
-                                                    panic!("Failed to write blessed output file '{}': {}", output_file_path, e);
+                                                if let Err(e) = ::std::fs::write(output_path_abs, &output_json) {
+                                                    panic!("Failed to write blessed output file '{}': {}", output_file_path_abs_str, e);
                                                 }
 
-                                                match existing_golden {
-                                                    Some(golden_content) => {
-                                                        if output_json != golden_content {
-                                                            panic!("Blessed test '{}' failed:\n--- Golden File: {}\n+++ Output:\n{}", #test_name, output_file_path, output_json);
+                                                // Check Git Status
+                                                match run_git_status(git_root_path_str, output_file_path_rel_str) {
+                                                    Ok(status_output) => {
+                                                        eprintln!("Raw Git status for '{}': {:?}", output_file_path_rel_str, status_output);
+
+                                                        if status_output.starts_with("?? ") { // Check prefix including space
+                                                            panic!("Blessed test '{}': Untracked file '{}'. Please review and `git add` the file.",
+                                                                   #test_name, output_file_path_rel_str);
+                                                        } else if status_output.starts_with(" M ") || status_output.starts_with("AM ") { // Check prefix including space
+                                                            panic!("Blessed test '{}': File '{}' is modified and differs from the git index. Please review changes and `git add` or revert.",
+                                                                   #test_name, output_file_path_rel_str);
+                                                        } else if status_output.starts_with("A ") || status_output.is_empty() { // Check prefix including space or empty
+                                                            // File is unmodified (empty output) or staged and unmodified (`A `)
+                                                            // Test passes.
+                                                        } else {
+                                                            // Capture unexpected non-empty output
+                                                            panic!("Blessed test '{}': Unexpected git status for '{}': {:?}. Please check repository state.",
+                                                                   #test_name, output_file_path_rel_str, status_output);
                                                         }
                                                     }
-                                                    None => {
-                                                        eprintln!("Blessed test '{}': Golden file created at {}. Please commit it.", #test_name, output_file_path);
-                                                        panic!("Blessed test '{}': Golden file created at {}. Please commit it.", #test_name, output_file_path);
+                                                    Err(e) => {
+                                                        panic!("Blessed test '{}': Failed to get git status for '{}': {}",
+                                                               #test_name, output_file_path_rel_str, e);
                                                     }
                                                 }
                                             }

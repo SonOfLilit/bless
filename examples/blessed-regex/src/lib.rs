@@ -25,7 +25,7 @@ fn match_regex(regex: &Regex, input: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blessed::{Serialize, Deserialize};
+    use blessed::{Deserialize, Serialize};
     use std::collections::HashMap;
 
     #[derive(Deserialize)]
@@ -56,7 +56,7 @@ mod tests {
                     parse_error: None,
                     matches,
                 }
-            },
+            }
             Err(e) => Output {
                 ast: None,
                 parse_error: Some(e),
