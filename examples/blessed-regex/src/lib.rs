@@ -8,7 +8,7 @@ pub enum ParseError {
     InvalidRegex(String),
 }
 
-fn parse_regex(regex: &str) -> Result<Regex, ParseError> {
+pub fn parse_regex(regex: &str) -> Result<Regex, ParseError> {
     if regex == "[" {
         Err(ParseError::InvalidRegex("Unmatched bracket".to_string()))
     } else {
@@ -16,7 +16,7 @@ fn parse_regex(regex: &str) -> Result<Regex, ParseError> {
     }
 }
 
-fn match_regex(regex: &Regex, input: &str) -> bool {
+pub fn match_regex(regex: &Regex, input: &str) -> bool {
     match regex {
         Regex::Literal(literal) => input.contains(literal),
     }
