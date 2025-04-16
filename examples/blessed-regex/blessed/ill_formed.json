@@ -2,6 +2,6 @@
   "ast": null,
   "matches": {},
   "parse_error": {
-    "InvalidRegex": "Unmatched bracket"
+    "InvalidRegex": "Mismatched or misplaced brackets"
   }
 }

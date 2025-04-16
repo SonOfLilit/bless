@@ -1,6 +1,7 @@
 #[cfg_attr(test, derive(serde::Serialize, Debug))]
 pub enum Regex {
     Literal(String),
+    CharClass(String),
 }
 
 #[cfg_attr(test, derive(serde::Serialize))]
@@ -9,9 +10,17 @@ pub enum ParseError {
 }
 
 pub fn parse_regex(regex: &str) -> Result<Regex, ParseError> {
-    if regex == "[" {
-        Err(ParseError::InvalidRegex("Unmatched bracket".to_string()))
-    } else {
+    if regex.starts_with('[') && regex.ends_with(']') && regex.len() >= 2 {
+        let chars = regex[1..regex.len() - 1].to_string();
+        if chars.contains('[') || chars.contains(']') {
+             Err(ParseError::InvalidRegex("Nested or mismatched brackets not supported".to_string()))
+        } else {
+             Ok(Regex::CharClass(chars))
+        }
+    } else if regex.contains('[') || regex.contains(']') {
+        Err(ParseError::InvalidRegex("Mismatched or misplaced brackets".to_string()))
+    }
+     else {
         Ok(Regex::Literal(regex.to_string()))
     }
 }
@@ -19,6 +28,7 @@ pub fn parse_regex(regex: &str) -> Result<Regex, ParseError> {
 pub fn match_regex(regex: &Regex, input: &str) -> bool {
     match regex {
         Regex::Literal(literal) => input.contains(literal),
+        Regex::CharClass(chars) => input.chars().any(|c| chars.contains(c)),
     }
 }
 

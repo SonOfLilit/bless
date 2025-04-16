@@ -1,6 +1,6 @@
 {
   "ast": {
-    "Literal": "[123]"
+    "CharClass": "123"
   },
   "matches": {
     "1": true,
