@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{ItemFn, Ident, PatType, LitStr, Token, punctuated::Punctuated};
+use syn::{parse_macro_input, ItemFn, Ident, Type, PatType, LitStr, Token, punctuated::Punctuated};
 use std::fs;
 use std::path::{Path, PathBuf};
 use serde::Deserialize;
