@@ -65,5 +65,5 @@ mod tests {
         }
     }
 
-    blessed::tests!("tests/*.blessed.json", "tests/blessed/");
+    blessed::tests!();
 }

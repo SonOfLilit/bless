@@ -1,9 +1,11 @@
 {
   "ast": {
-    "Literal": "\\d"
+    "Literal": "[123]"
   },
   "matches": {
     "1": true,
+    "3": true,
+    "4": false,
     "a": false
   },
   "parse_error": null

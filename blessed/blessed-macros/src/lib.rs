@@ -3,7 +3,6 @@ use quote::quote;
 use syn::{parse_macro_input, ItemFn, Ident, PatType, LitStr, Token, punctuated::Punctuated};
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Deserialize;
 use serde_json;
 use std::collections::HashMap;
@@ -68,13 +67,11 @@ pub fn harness(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn tests(input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(input with Punctuated::<LitStr, Token![,]>::parse_terminated);
-    if args.len() != 2 {
-        return syn::Error::new_spanned(args, "Expected exactly two string literal arguments: input JSON glob pattern and output directory")
+    if args.len() != 0 {
+        return syn::Error::new_spanned(args, "No arguments expected")
             .to_compile_error()
             .into();
     }
-    let input_glob_pattern_rel = args[0].value();
-    let output_dir_rel = args[1].value();
 
     let mut generated_tests = Vec::new();
 
@@ -82,8 +79,8 @@ pub fn tests(input: TokenStream) -> TokenStream {
         Ok(dir) => PathBuf::from(dir),
         Err(_) => return syn::Error::new(proc_macro2::Span::call_site(), "CARGO_MANIFEST_DIR not set").to_compile_error().into(),
     };
-    let absolute_glob_pattern = manifest_dir.join(&input_glob_pattern_rel);
-    let output_dir_abs = manifest_dir.join(&output_dir_rel);
+    let absolute_glob_pattern = manifest_dir.join("src/**/*.blessed.json");
+    let output_dir_abs = manifest_dir.join("blessed/");
 
     // --- Find Git Root --- 
     let git_root = match Command::new("git")
@@ -114,15 +111,9 @@ pub fn tests(input: TokenStream) -> TokenStream {
     };
     // --- End Find Git Root ---
 
-    eprintln!("Searching for blessed files with pattern: {:?}\nGit root: {:?}", absolute_glob_pattern, git_root);
+    eprintln!("Searching for blessed files");
 
-    let glob_pattern_str = match absolute_glob_pattern.to_str() {
-        Some(s) => s,
-        None => {
-            let msg = format!("Invalid glob pattern path: {:?}", absolute_glob_pattern);
-            return syn::Error::new(proc_macro2::Span::call_site(), msg).to_compile_error().into();
-        }
-    };
+    let glob_pattern_str = absolute_glob_pattern.to_str().unwrap();
 
     let mut found_files = false;
     match glob::glob(glob_pattern_str) {
@@ -300,16 +291,16 @@ pub fn tests(input: TokenStream) -> TokenStream {
         }
     }
 
-    // TODO: Generate one failing test so this behaves like a test failure
+    // TODO: Generate one always-failing test so this presents as a test failure
     if !found_files {
-         eprintln!("Warning: No blessed files found matching pattern: {:?}", absolute_glob_pattern);
+         eprintln!("Warning: No blessed files (src/**/*.blessed.json) found");
     }
 
     let final_code = quote! {
         #(#generated_tests)*
     };
 
-    eprintln!("Generated {} blessed tests from pattern '{}'.", generated_tests.len(), input_glob_pattern_rel);
+    eprintln!("Generated {} blessed tests.", generated_tests.len());
 
     TokenStream::from(final_code)
 } 
