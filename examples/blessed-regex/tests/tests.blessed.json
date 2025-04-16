@@ -11,12 +11,13 @@
             ]
         }
     },
-    "escapes": {
+    "digits": {
         "harness": "parse_compile_match",
         "params": {
-            "regex": "\\d",
+            "regex": "[123]",
             "inputs": [
                 "1",
+                "3",
                 "a"
             ]
         }
